@@ -1,0 +1,5 @@
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
+# 2. 创建可执行文件，名字叫 pa0 (或者你喜欢的名字)
+add_executable(pa0 main.cpp)
+target_link_libraries(pa0 PRIVATE Eigen3::Eigen)
