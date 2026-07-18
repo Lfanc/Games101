@@ -120,6 +120,9 @@ int main(int argc, const char** argv)
         cv::Mat image(700, 700, CV_32FC3, r.frame_buffer().data());
         image.convertTo(image, CV_8UC3, 1.0f);
         cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+        // 新增：将图像放大 3 倍，便于观察边缘
+        //cv::Mat resized_image;
+        //cv::resize(image, resized_image, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
 
         cv::imwrite(filename, image);
 
@@ -139,6 +142,11 @@ int main(int argc, const char** argv)
         cv::Mat image(700, 700, CV_32FC3, r.frame_buffer().data());
         image.convertTo(image, CV_8UC3, 1.0f);
         cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+
+        // 新增：将图像放大 3 倍，便于观察边缘
+        //cv::Mat resized_image;
+        //cv::resize(image, resized_image, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
+
         cv::imshow("image", image);
         key = cv::waitKey(10);
 

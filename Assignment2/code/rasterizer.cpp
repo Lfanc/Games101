@@ -40,13 +40,11 @@ auto to_vec4(const Eigen::Vector3f& v3, float w = 1.0f)
 }
 
 
-static bool insideTriangle(int x, int y, const Vector3f* _v)
+static bool insideTriangle(float x, float y, const Vector3f* _v)
 {   
     // TODO : Implement this function to check if the point (x, y) is inside the triangle represented by _v[0], _v[1], _v[2]
-    // 将像素中心作为采样点
-    float px = x + 0.5f;
-    float py = y + 0.5f;
-    Eigen::Vector3f p(px, py, 0.0f);
+    
+    Eigen::Vector3f p(x, y, 0.0f);
     // 计算三角形的边向量
     Eigen::Vector3f ab = _v[1] - _v[0];
     Eigen::Vector3f bc = _v[2] - _v[1];
@@ -55,7 +53,7 @@ static bool insideTriangle(int x, int y, const Vector3f* _v)
     Eigen::Vector3f ap = p - _v[0];
     Eigen::Vector3f bp = p - _v[1];
     Eigen::Vector3f cp = p - _v[2];
-    // 计算叉积的 z 分量
+    // 计算叉积的 z 分量, 因为三角形是逆时针构建的，所以 点p 在三角形内部相当于叉积是正反向
     return (ab.cross(ap).z() >= 0) && (bc.cross(bp).z() >= 0) && (ca.cross(cp).z() >= 0);
     //return (ap * ab).z() >= 0 && (bp * bc).z() >= 0 && (cp * ca).z() >= 0;
 
@@ -121,9 +119,11 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
 //Screen space rasterization
 void rst::rasterizer::rasterize_triangle(const Triangle& t) {
     auto v = t.toVector4();
-    
     // TODO : Find out the bounding box of current triangle.
     // iterate through the pixel and find if the current pixel is inside the triangle
+    float dx[] = {0.25f, 0.75f, 0.25f, 0.75f};
+    float dy[] = {0.25f, 0.25f, 0.75f, 0.75f};
+
 	float x_max = FLT_MIN, x_min = FLT_MAX, y_max = FLT_MIN, y_min = FLT_MAX;
     for (int i = 0; i < v.size(); ++i) {
 		x_max = std::max(x_max, v[i].x());
@@ -131,19 +131,41 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t) {
 		y_max = std::max(y_max, v[i].y());
 		y_min = std::min(y_min, v[i].y());
     }
-    for (float i = std::floor(x_min); i <= std::floor(x_max); ++i) {
-        for (float j = std::floor(y_min); j <= std::floor(y_max); ++j){
-            if (insideTriangle(i, j, t.v)) {
-                auto[alpha, beta, gamma] = computeBarycentric2D(i, j, t.v);
-                float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
-                float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
-                z_interpolated *= w_reciprocal;
+    // 将包围盒边界限制在 [0, width-1] 和 [0, height-1] 之间，并转为整数
+    int min_x = std::max(0, (int)std::floor(x_min));
+    int max_x = std::min(width - 1, (int)std::floor(x_max));
+    int min_y = std::max(0, (int)std::floor(y_min));
+    int max_y = std::min(height - 1, (int)std::floor(y_max));
 
-                // z_buffer
-                int flipped_index = (int)j * width + (int)i;
-                if (depth_buf[flipped_index] > z_interpolated) {
-                    depth_buf[flipped_index] = z_interpolated;
-                    set_pixel(Eigen::Vector3f(i, j, 1), t.getColor());
+    for (int i = min_x; i <= max_x; ++i) {
+        for (int j = min_y; j <= max_y; ++j) {
+            for (int k = 0; k < 4; ++k) {
+                float subi = i + dx[k];
+                float subj = j + dy[k];
+
+                if (insideTriangle(subi, subj, t.v)) {
+                    auto[alpha, beta, gamma] = computeBarycentric2D(subi, subj, t.v);
+                    float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                    float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                    z_interpolated *= w_reciprocal;
+
+                    // z_buffer
+                    // 外层 index
+                    int out_index = get_index(i, j);
+                    // k相当于内层 index
+                    if (depth_buf[out_index][k] > z_interpolated) {
+                        depth_buf[out_index][k] = z_interpolated;
+                        // 更新子采样点颜色
+                        sample_color_buf[out_index][k] = t.getColor();
+
+                        // 重新计算该像素4个子采样点的平均颜色，并写入 frame_buf
+                        Eigen::Vector3f avg_color = (sample_color_buf[out_index][0] +
+                            sample_color_buf[out_index][1] +
+                            sample_color_buf[out_index][2] +
+                            sample_color_buf[out_index][3]) / 4.0f;
+
+                        set_pixel(Eigen::Vector3f(i, j, 1.0f), avg_color);
+                    }
                 }
             }
         }
@@ -174,13 +196,17 @@ void rst::rasterizer::set_projection(const Eigen::Matrix4f& p)
 
 void rst::rasterizer::clear(rst::Buffers buff)
 {
-    if ((buff & rst::Buffers::Color) == rst::Buffers::Color)
-    {
-        std::fill(frame_buf.begin(), frame_buf.end(), Eigen::Vector3f{0, 0, 0});
+    if ((buff & rst::Buffers::Color) == rst::Buffers::Color) {
+        std::fill(frame_buf.begin(), frame_buf.end(), Eigen::Vector3f::Zero());
+
+        // 新增：清理子采样颜色缓存
+        std::array<Eigen::Vector3f, 4> black = { Eigen::Vector3f::Zero(), Eigen::Vector3f::Zero(), Eigen::Vector3f::Zero(), Eigen::Vector3f::Zero() };
+        std::fill(sample_color_buf.begin(), sample_color_buf.end(), black);
     }
-    if ((buff & rst::Buffers::Depth) == rst::Buffers::Depth)
-    {
-        std::fill(depth_buf.begin(), depth_buf.end(), std::numeric_limits<float>::infinity());
+    if ((buff & rst::Buffers::Depth) == rst::Buffers::Depth) {
+        float inf = std::numeric_limits<float>::infinity();
+        std::array<float, 4> inf_arr = { inf, inf, inf, inf };
+        std::fill(depth_buf.begin(), depth_buf.end(), inf_arr);
     }
 }
 
@@ -188,6 +214,7 @@ rst::rasterizer::rasterizer(int w, int h) : width(w), height(h)
 {
     frame_buf.resize(w * h);
     depth_buf.resize(w * h);
+    sample_color_buf.resize(w * h);
 }
 
 int rst::rasterizer::get_index(int x, int y)
