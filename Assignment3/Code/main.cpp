@@ -7,6 +7,7 @@
 #include "Shader.hpp"
 #include "Texture.hpp"
 #include "OBJ_Loader.h"
+#include "math.h"
 
 Eigen::Matrix4f get_view_matrix(Eigen::Vector3f eye_pos)
 {
@@ -50,7 +51,31 @@ Eigen::Matrix4f get_model_matrix(float angle)
 Eigen::Matrix4f get_projection_matrix(float eye_fov, float aspect_ratio, float zNear, float zFar)
 {
     // TODO: Use the same projection matrix from the previous assignments
+    Eigen::Matrix4f projection;
 
+    Eigen::Matrix4f persp2ortho;
+    persp2ortho << -zNear, 0, 0, 0,
+        0, -zNear, 0, 0,
+        0, 0, -zNear - zFar, zNear* zFar,
+        0, 0, 1, 0;
+
+    float t = tan(eye_fov / 2 * MY_PI / 180) * zNear;
+    float r = t * aspect_ratio;
+    float l = -r;
+    float b = -t;
+    Eigen::Matrix4f ortho, ortho_S, ortho_T;
+    ortho_T << 1, 0, 0, -(r + l) / 2,
+        0, 1, 0, -(b + t) / 2,
+        0, 0, 1, (zNear + zFar) / 2,
+        0, 0, 0, 1;
+    ortho_S << 2 / (r - l), 0, 0, 0,
+        0, 2 / (t - b), 0, 0,
+        0, 0, 2 / (zFar - zNear), 0,
+        0, 0, 0, 1;
+    ortho = ortho_S * ortho_T;
+    projection = ortho * persp2ortho;
+
+    return projection;
 }
 
 Eigen::Vector3f vertex_shader(const vertex_shader_payload& payload)
@@ -68,14 +93,14 @@ Eigen::Vector3f normal_fragment_shader(const fragment_shader_payload& payload)
 
 static Eigen::Vector3f reflect(const Eigen::Vector3f& vec, const Eigen::Vector3f& axis)
 {
-    auto costheta = vec.dot(axis);
-    return (2 * costheta * axis - vec).normalized();
+	auto costheta = vec.dot(axis); // cosine of the angle between vec and axis
+	return (2 * costheta * axis - vec).normalized(); // reflection formula
 }
 
 struct light
 {
     Eigen::Vector3f position;
-    Eigen::Vector3f intensity;
+    Eigen::Vector3f intensity; // 强度
 };
 
 Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload& payload)
@@ -142,7 +167,17 @@ Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
-        
+        // ambient
+        Eigen::Vector3f La = ka.cwiseProduct(amb_light_intensity);
+        // diffuse
+        Eigen::Vector3f PL = light.position - point; // 由着色点指向光源的向量
+        float r_squaredNorm = PL.squaredNorm();
+        Eigen::Vector3f Ld = kd.cwiseProduct(light.intensity / r_squaredNorm) * std::max(0.0f, normal.dot(PL.normalized()));
+        // specular
+        Eigen::Vector3f PE = eye_pos - point; // 由着色点指向眼睛的向量
+        Eigen::Vector3f h = (PL + PE).normalized(); // 半程向量
+        Eigen::Vector3f Ls = ks.cwiseProduct(light.intensity / r_squaredNorm) * std::powf(std::max(0.0f, normal.dot(h)), p);
+        result_color += La + Ld + Ls;
     }
 
     return result_color * 255.f;
@@ -229,7 +264,7 @@ Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload& payload)
     // dU = kh * kn * (h(u+1/w,v)-h(u,v))
     // dV = kh * kn * (h(u,v+1/h)-h(u,v))
     // Vector ln = (-dU, -dV, 1)
-    // Normal n = normalize(TBN * ln)
+     //Normal n = normalize(TBN * ln)
 
 
     Eigen::Vector3f result_color = {0, 0, 0};
@@ -247,10 +282,10 @@ int main(int argc, const char** argv)
 
     std::string filename = "output.png";
     objl::Loader Loader;
-    std::string obj_path = "../models/spot/";
+    std::string obj_path = "E:/resources/Games101/Assignment3/Code/models/spot/";
 
     // Load .obj File
-    bool loadout = Loader.LoadFile("../models/spot/spot_triangulated_good.obj");
+    bool loadout = Loader.LoadFile("E:/resources/Games101/Assignment3/Code/models/spot/spot_triangulated_good.obj");
     for(auto mesh:Loader.LoadedMeshes)
     {
         for(int i=0;i<mesh.Vertices.size();i+=3)

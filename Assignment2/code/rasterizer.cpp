@@ -55,7 +55,6 @@ static bool insideTriangle(float x, float y, const Vector3f* _v)
     Eigen::Vector3f cp = p - _v[2];
     // 计算叉积的 z 分量, 因为三角形是逆时针构建的，所以 点p 在三角形内部相当于叉积是正反向
     return (ab.cross(ap).z() >= 0) && (bc.cross(bp).z() >= 0) && (ca.cross(cp).z() >= 0);
-    //return (ap * ab).z() >= 0 && (bp * bc).z() >= 0 && (cp * ca).z() >= 0;
 
 }
 

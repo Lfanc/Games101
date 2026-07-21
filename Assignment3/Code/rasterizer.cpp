@@ -171,7 +171,8 @@ static std::tuple<float, float, float> computeBarycentric2D(float x, float y, co
 }
 
 void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
-
+    // f1 和 f2 的计算其实是一个线性映射（Linear Mapping） 的数学技巧，用来将 Z 坐标从 NDC 空间 转换到 实际的深度空间（用于 Z-buffer）
+    // z depth = f1 * zndc + f2
     float f1 = (50 - 0.1) / 2.0;
     float f2 = (50 + 0.1) / 2.0;
 
@@ -179,7 +180,7 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
     for (const auto& t:TriangleList)
     {
         Triangle newtri = *t;
-
+        // 计算视图空间坐标（给 Shader 用）
         std::array<Eigen::Vector4f, 3> mm {
                 (view * model * t->v[0]),
                 (view * model * t->v[1]),
@@ -191,7 +192,7 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
         std::transform(mm.begin(), mm.end(), viewspace_pos.begin(), [](auto& v) {
             return v.template head<3>();
         });
-
+        // mvp
         Eigen::Vector4f v[] = {
                 mvp * t->v[0],
                 mvp * t->v[1],
@@ -203,7 +204,7 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
             vec.y()/=vec.w();
             vec.z()/=vec.w();
         }
-
+        // 法线变换（逆转置矩阵）
         Eigen::Matrix4f inv_trans = (view * model).inverse().transpose();
         Eigen::Vector4f n[] = {
                 inv_trans * to_vec4(t->normal[0], 0.0f),
@@ -211,30 +212,34 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
                 inv_trans * to_vec4(t->normal[2], 0.0f)
         };
 
-        //Viewport transformation
+        //Viewport transformation  视口变换（NDC → 屏幕坐标）
         for (auto & vert : v)
         {
-            vert.x() = 0.5*width*(vert.x()+1.0);
-            vert.y() = 0.5*height*(vert.y()+1.0);
-            vert.z() = vert.z() * f1 + f2;
+            vert.x() = 0.5*width*(vert.x()+1.0);  // [-1,1] → [0, width]
+            vert.y() = 0.5*height*(vert.y()+1.0); // [-1,1] → [0, height]
+            vert.z() = vert.z() * f1 + f2;        // [-1,1] → [0.1, 50]
         }
 
+        // 设置屏幕空间顶点
         for (int i = 0; i < 3; ++i)
         {
             //screen space coordinates
             newtri.setVertex(i, v[i]);
         }
 
+        // 设置视图空间法线
         for (int i = 0; i < 3; ++i)
         {
             //view space normal
             newtri.setNormal(i, n[i].head<3>());
         }
 
+        // 设置颜色（统一的暗绿色）
         newtri.setColor(0, 148,121.0,92.0);
         newtri.setColor(1, 148,121.0,92.0);
         newtri.setColor(2, 148,121.0,92.0);
 
+        // 调用光栅化，同时传入视图空间坐标
         // Also pass view space vertice position
         rasterize_triangle(newtri, viewspace_pos);
     }
@@ -264,21 +269,76 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eig
     //    * v[i].w() is the vertex view space depth value z.
     //    * Z is interpolated view space depth for the current pixel
     //    * zp is depth between zNear and zFar, used for z-buffer
+    // 1. 获取顶点的屏幕坐标
+    auto v = t.toVector4();
 
-    // float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
-    // float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
-    // zp *= Z;
+    // 2. 计算包围盒 (Bounding Box)
+    float min_x = std::min({ v[0].x(), v[1].x(), v[2].x() });
+    float max_x = std::max({ v[0].x(), v[1].x(), v[2].x() });
+    float min_y = std::min({ v[0].y(), v[1].y(), v[2].y() });
+    float max_y = std::max({ v[0].y(), v[1].y(), v[2].y() });
 
-    // TODO: Interpolate the attributes:
-    // auto interpolated_color
-    // auto interpolated_normal
-    // auto interpolated_texcoords
-    // auto interpolated_shadingcoords
+    // 确保边界在屏幕范围内
+    min_x = std::max(0.0f, std::floor(min_x));
+    max_x = std::min((float)width - 1.0f, std::ceil(max_x));
+    min_y = std::max(0.0f, std::floor(min_y));
+    max_y = std::min((float)height - 1.0f, std::ceil(max_y));
 
-    // Use: fragment_shader_payload payload( interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr);
-    // Use: payload.view_pos = interpolated_shadingcoords;
-    // Use: Instead of passing the triangle's color directly to the frame buffer, pass the color to the shaders first to get the final color;
-    // Use: auto pixel_color = fragment_shader(payload);
+    // 3. 遍历包围盒内的每一个像素
+    for (int x = min_x; x <= max_x; ++x)
+    {
+        for (int y = min_y; y <= max_y; ++y)
+        {
+            // 判断像素中心点 (x+0.5, y+0.5) 是否在三角形内
+            if (insideTriangle(x + 0.5f, y + 0.5f, t.v))
+            {
+                // float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                // float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                // zp *= Z;
+                // 计算重心坐标 (alpha, beta, gamma)
+                auto [alpha, beta, gamma] = computeBarycentric2D(x + 0.5f, y + 0.5f, t.v);
+                // 透视校正插值 (Perspective-correct interpolation)（0 ~ 1 之间）
+                float w_reciprocal = 1.0f / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+
+                // 插值深度 Z (用于 Z-buffer)
+                float z_interpolated = alpha * v[0].z() / v[0].w()
+                    + beta * v[1].z() / v[1].w()
+                    + gamma * v[2].z() / v[2].w();
+                z_interpolated *= w_reciprocal;
+                // 4. Z-buffer 深度测试
+                if (z_interpolated < depth_buf[get_index(x, y)])
+                {
+                    // 深度测试通过，更新深度缓冲区
+                    depth_buf[get_index(x, y)] = z_interpolated;
+                    // TODO: Interpolate the attributes:
+                    // auto interpolated_color
+                    // auto interpolated_normal
+                    // auto interpolated_texcoords
+                    // auto interpolated_shadingcoords
+                    // 插值其他属性 (颜色、法线、纹理坐标、视图空间坐标)
+                    auto interpolated_color = interpolate(alpha, beta, gamma, t.color[0], t.color[1], t.color[2], 1.0f);
+                    auto interpolated_normal = interpolate(alpha, beta, gamma, t.normal[0], t.normal[1], t.normal[2], 1.0f);
+                    auto interpolated_texcoords = interpolate(alpha, beta, gamma, t.tex_coords[0], t.tex_coords[1], t.tex_coords[2], 1.0f);
+                    auto interpolated_shadingcoords = interpolate(alpha, beta, gamma, view_pos[0], view_pos[1], view_pos[2], 1.0f);
+                    // Use: fragment_shader_payload payload( interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr);
+                    // Use: payload.view_pos = interpolated_shadingcoords;
+                    // Use: Instead of passing the triangle's color directly to the frame buffer, pass the color to the shaders first to get the final color;
+                    // Use: auto pixel_color = fragment_shader(payload);
+                    fragment_shader_payload payload(interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr);
+                    payload.view_pos = interpolated_shadingcoords;
+                    // 5. 调用 Fragment Shader 计算最终像素颜色
+                    auto pixel_color = fragment_shader(payload);
+                    // 6. 写入颜色缓冲区
+                    set_pixel(Eigen::Vector2i(x, y), pixel_color);
+                }
+            }
+        }
+    }
+
+
+
+
+    
 
  
 }

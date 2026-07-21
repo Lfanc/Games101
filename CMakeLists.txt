@@ -12,6 +12,6 @@ endif()
 add_subdirectory(pa0/pa0)
 add_subdirectory(Assignment1/code)
 add_subdirectory(Assignment2/code)
-#add_subdirectory(作业2)
-#add_subdirectory(作业3)
+add_subdirectory(Assignment3/Code)
+
 # ... 其他作业
