@@ -24,9 +24,28 @@ public:
 
     Eigen::Vector3f getColor(float u, float v)
     {
-        auto u_img = u * width;
-        auto v_img = (1 - v) * height;
-        auto color = image_data.at<cv::Vec3b>(v_img, u_img);
+        // 源代码
+        //auto u_img = u * width;
+        //auto v_img = (1 - v) * height;
+        //auto color = image_data.at<cv::Vec3b>(v_img, u_img);
+        //return Eigen::Vector3f(color[0], color[1], color[2]);
+        
+        //质谱ai改进的
+        // 防止 uv 超出 [0, 1] 范围
+        u = std::fmax(0.0f, std::fmin(1.0f, u));
+        v = std::fmax(0.0f, std::fmin(1.0f, v));
+
+        // 修改这里：映射到 0 ~ width-1 和 0 ~ height-1
+        auto u_img = u * (width - 1);
+        auto v_img = (1 - v) * (height - 1);
+
+        // 取整
+        int u_pixel = static_cast<int>(u_img);
+        int v_pixel = static_cast<int>(v_img);
+
+        // 获取像素颜色
+        auto color = image_data.at<cv::Vec3b>(v_pixel, u_pixel);
+
         return Eigen::Vector3f(color[0], color[1], color[2]);
     }
 
