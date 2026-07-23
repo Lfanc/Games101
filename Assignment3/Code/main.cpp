@@ -228,15 +228,51 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
 	// Vector ln = (-dU, -dV, 1)
 	// Position p = p + kn * n * h(u,v)
 	// Normal n = normalize(TBN * ln)
+	float x = normal.x();
+	float y = normal.y();
+	float z = normal.z();
+	Eigen::Vector3f t(x * y / sqrt(x * x + z * z), sqrt(x * x + z * z), z * y / sqrt(x * x + z * z));
+	Eigen::Vector3f b = normal.cross(t);
+	Eigen::Matrix3f TBN;
+	TBN << t, b, normal;
 
+	float u = payload.tex_coords.x();
+	float v = payload.tex_coords.y();
+	float w = payload.texture->width;
+	float h = payload.texture->height;
 
+	float h_u = payload.texture->getColor(u + 1.0f / w, v).norm();
+	float h_v = payload.texture->getColor(u, v + 1.0f / h).norm();
+	float h_curr = payload.texture->getColor(u, v).norm();
+
+	float dU = kh * kn * (h_u - h_curr);
+	float dV = kh * kn * (h_v - h_curr);
+
+	Eigen::Vector3f ln(-dU, -dV, 1.0f);
+	// Normal n = normalize(TBN * ln)
+	normal = (TBN * ln).normalized();
+
+	point += kn * normal * h_curr;
 	Eigen::Vector3f result_color = {0, 0, 0};
 
 	for (auto& light : lights)
 	{
 		// TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
 		// components are. Then, accumulate that result on the *result_color* object.
+		// ambient
+		Eigen::Vector3f La = ka.cwiseProduct(amb_light_intensity);
 
+		// diffuse - 注意这里使用了新的 point
+		Eigen::Vector3f PL = light.position - point;
+		float r_squaredNorm = PL.squaredNorm();
+		Eigen::Vector3f Ld = kd.cwiseProduct(light.intensity / r_squaredNorm) * std::max(0.0f, normal.dot(PL.normalized()));
+
+		// specular - 注意这里使用了新的 point
+		Eigen::Vector3f PE = eye_pos - point;
+		Eigen::Vector3f h_vec = (PL + PE).normalized();
+		Eigen::Vector3f Ls = ks.cwiseProduct(light.intensity / r_squaredNorm) * std::powf(std::max(0.0f, normal.dot(h_vec)), p);
+
+		result_color += La + Ld + Ls;
 
 	}
 
@@ -269,18 +305,38 @@ Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload& payload)
 
 	// TODO: Implement bump mapping here
 	// Let n = normal = (x, y, z)
-	// Vector t = (x*y/sqrt(x*x+z*z),sqrt(x*x+z*z),z*y/sqrt(x*x+z*z))
-	// Vector b = n cross product t
-	// Matrix TBN = [t b n]
-	// dU = kh * kn * (h(u+1/w,v)-h(u,v))
-	// dV = kh * kn * (h(u,v+1/h)-h(u,v))
-	// Vector ln = (-dU, -dV, 1)
-	 //Normal n = normalize(TBN * ln)
+	float x = normal.x();
+	float y = normal.y();
+	float z = normal.z();
 
+	// Vector t = (x*y/sqrt(x*x+z*z),sqrt(x*x+z*z),z*y/sqrt(x*x+z*z))
+	Eigen::Vector3f t(x * y / sqrt(x * x + z * z), sqrt(x * x + z * z), z * y / sqrt(x * x + z * z));
+
+	// Vector b = n cross product t
+	Eigen::Vector3f b = normal.cross(t);
+
+	// Matrix TBN = [t b n]
+	Eigen::Matrix3f TBN;
+	TBN << t, b, normal;
+	
+	float u = payload.tex_coords.x();
+	float v = payload.tex_coords.y();
+	float w = payload.texture->width;
+	float h = payload.texture->height;
+	// 获取高度值，这里假设高度图是灰度图，取x通道即可，也可以取norm()
+	// dU = kh * kn * (h(u+1/w,v)-h(u,v))
+	float dU = kh * kn * (payload.texture->getColor(u + 1.0f / w, v).norm() - payload.texture->getColor(u, v).norm());
+	// dV = kh * kn * (h(u,v+1/h)-h(u,v))
+	float dV = kh * kn * (payload.texture->getColor(u, v + 1.0f / h).norm() - payload.texture->getColor(u, v).norm());
+
+	// Vector ln = (-dU, -dV, 1) 构建局部法线
+	Eigen::Vector3f ln(-dU, -dV, 1.0f);
+	// Normal n = normalize(TBN * ln)
+	normal = (TBN * ln).normalized();
 
 	Eigen::Vector3f result_color = {0, 0, 0};
 	result_color = normal;
-
+	
 	return result_color * 255.f;
 }
 
