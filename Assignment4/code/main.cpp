@@ -33,7 +33,15 @@ void naive_bezier(const std::vector<cv::Point2f> &points, cv::Mat &window)
 cv::Point2f recursive_bezier(const std::vector<cv::Point2f> &control_points, float t) 
 {
     // TODO: Implement de Casteljau's algorithm
-    return cv::Point2f();
+    if (control_points.size() == 1) {
+        return control_points[0];
+    }
+
+    std::vector<cv::Point2f> new_control_points;
+    for (int i = 0; i < control_points.size() - 1; i++) {
+        new_control_points.push_back((1 - t) * control_points[i] + t * control_points[i + 1]);
+    }
+    return recursive_bezier(new_control_points, t);
 
 }
 
@@ -41,6 +49,33 @@ void bezier(const std::vector<cv::Point2f> &control_points, cv::Mat &window)
 {
     // TODO: Iterate through all t = 0 to t = 1 with small steps, and call de Casteljau's 
     // recursive Bezier algorithm.
+    for (double t = 0.0; t <= 1.0; t += 0.001)
+    {
+        auto point = recursive_bezier(control_points, t);
+        int x0 = static_cast<int>(std::floor(point.x));
+        int y0 = static_cast<int>(std::floor(point.y));
+
+        float x_temp = point.x - x0;
+        float y_temp = point.y - y0;
+        x0 = x_temp <= 0.5f ? x0 - 1 : x0;
+        y0 = y_temp <= 0.5f ? y0 - 1 : y0;
+        // 2 * 2 抗锯齿
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 2; j++) {
+                float dx = point.x - x0 - 0.5f - i;
+                float dy = point.y - y0 - 0.5f - j;
+                
+                float distence_square = dx * dx + dy * dy;
+
+                float ratio = 1 - (distence_square / 2);
+
+                float color = window.at<cv::Vec3b>(y0+j, x0+i)[1];
+                window.at<cv::Vec3b>(y0 + j, x0 + i)[1] = std::max(255.0f * ratio, color);
+            }
+        }
+        
+        
+    }
 
 }
 
@@ -63,10 +98,10 @@ int main()
         if (control_points.size() == 4) 
         {
             naive_bezier(control_points, window);
-            //   bezier(control_points, window);
+            bezier(control_points, window);
 
             cv::imshow("Bezier Curve", window);
-            cv::imwrite("my_bezier_curve.png", window);
+            cv::imwrite("my_bezier_curve2.png", window);
             key = cv::waitKey(0);
 
             return 0;
