@@ -126,7 +126,7 @@ Vector3f castRay(
         int depth)
 {
     if (depth > scene.maxDepth) {
-        return Vector3f(0.0,0.0,0.0);
+        return Vector3f(0.0f,0.0f,0.0f);
     }
 
     Vector3f hitColor = scene.backgroundColor;
@@ -229,8 +229,10 @@ void Renderer::Render(const Scene& scene)
             // vector that passes through it.
             // Also, don't forget to multiply both of them with the variable *scale*, and
             // x (horizontal) variable with the *imageAspectRatio*            
-
+            x = (2 * (i + 0.5f) / scene.width - 1.0f) * scale * imageAspectRatio;
+            y = (1.0f - 2 * (j + 0.5f) / scene.height) * scale;
             Vector3f dir = Vector3f(x, y, -1); // Don't forget to normalize this direction!
+            dir = normalize(dir);
             framebuffer[m++] = castRay(eye_pos, dir, scene, 0);
         }
         UpdateProgress(j / (float)scene.height);
