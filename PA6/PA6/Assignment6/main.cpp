@@ -13,7 +13,8 @@ int main(int argc, char** argv)
 {
     Scene scene(1280, 960);
 
-    MeshTriangle bunny("../models/bunny/bunny.obj");
+    MeshTriangle bunny("E:/resources/Games101/PA6/PA6/Assignment6/models/bunny/bunny.obj");
+    // E:/resources/Games101/PA6/PA6/Assignment6/models/bunny/bunny.obj
 
     scene.Add(&bunny);
     scene.Add(std::make_unique<Light>(Vector3f(-20, 70, 20), 1));

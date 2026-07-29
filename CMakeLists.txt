@@ -15,5 +15,6 @@ add_subdirectory(Assignment2/code)
 add_subdirectory(Assignment3/Code)
 add_subdirectory(Assignment4/code)
 add_subdirectory(Assignment5/Code)
+add_subdirectory(PA6/PA6/Assignment6)
 
 # ... 其他作业
