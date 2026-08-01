@@ -105,10 +105,42 @@ Intersection BVHAccel::Intersect(const Ray& ray) const
     return isect;
 }
 
+static std::array<int, 3> getDirIsNeg(const Ray& ray) {
+    std::array<int, 3> dirIsNeg = {
+        ray.direction.x > 0 ? 1 : 0,
+        ray.direction.y > 0 ? 1 : 0,
+        ray.direction.z > 0 ? 1 : 0
+    };
+    return dirIsNeg;
+}
+
 Intersection BVHAccel::getIntersection(BVHBuildNode* node, const Ray& ray) const
 {
     // TODO Traverse the BVH to find intersection
+    //没发生碰撞
+    if (!node || !node->bounds.IntersectP(ray, ray.direction_inv, getDirIsNeg(ray))) {
+        return Intersection();
+    }
+    // 叶子节点，
+    if (node->left == nullptr && node->right == nullptr) {
+        return node->object->getIntersection(ray);
+    }
+    //到这说明当前节点不是叶子节点，继续递归
+    // 3. 内部节点：分别求左右子树
+    Intersection leftHit = getIntersection(node->left, ray);
+    Intersection rightHit = getIntersection(node->right, ray);
 
+    // 4. 关键：返回距离更近（t 更小）的那个交点
+    // 如果左子树没交点（t 为负或无穷），则返回右子树；反之亦然；都有则比较 t
+    if (leftHit.happened && rightHit.happened) {
+        return leftHit.distance < rightHit.distance ? leftHit : rightHit;
+    }
+    else if (leftHit.happened) {
+        return leftHit;
+    }
+    else {
+        return rightHit; // 注意：如果两个都没击中，返回的 Intersection 默认 happened = false
+    }
 }
 
 

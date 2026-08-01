@@ -96,7 +96,23 @@ inline bool Bounds3::IntersectP(const Ray& ray, const Vector3f& invDir,
     // invDir: ray direction(x,y,z), invDir=(1.0/x,1.0/y,1.0/z), use this because Multiply is faster that Division
     // dirIsNeg: ray direction(x,y,z), dirIsNeg=[int(x>0),int(y>0),int(z>0)], use this to simplify your logic
     // TODO test if ray bound intersects
+    // 初始化相交时间
+    double t_enter = -std::numeric_limits<double>::infinity();
+    double t_exit = std::numeric_limits<double>::infinity();
+    // 三个轴向判断
+    for (int i = 0; i < 3; i++) {
 
+        // 根据射线方向规定包围盒的远近平面
+        float near_plane = dirIsNeg[i] ? pMin[i] : pMax[i];
+        float far_plane = dirIsNeg[i] ? pMax[i] : pMin[i];
+        // 根据公式计算相交时间
+        double t_near = (near_plane - ray.origin[i]) * invDir[i];
+        double t_far = (far_plane - ray.origin[i]) * invDir[i];
+        // 判断相交时间的合理性
+        t_enter = std::max(t_enter, t_near);
+        t_exit = std::min(t_exit, t_far);
+    }
+    return t_enter <= t_exit && t_exit >= 0;
 }
 
 inline Bounds3 Union(const Bounds3& b1, const Bounds3& b2)
